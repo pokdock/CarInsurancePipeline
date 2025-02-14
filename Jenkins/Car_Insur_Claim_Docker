@@ -1,0 +1,258 @@
+pipeline {
+    agent any
+    
+    /*triggers {
+        pollSCM('* * * * *') // Polls the SCM (GitHub repository) every minute for changes
+    }*/
+    
+    stages {
+        stage('Build') {
+            parallel {
+                stage('Build On Python') {
+                    
+                    steps {
+                        // Execute Python scripts with Spark
+                        catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+                        echo "Build Docker Image for the pyspark incremental load"
+                        sh '''mkdir -p Dev_Python
+                            cd Dev_Python
+                            rm -rf BD_Colab
+                            git clone -b Dev_Python https://github.com/Asadkardame/BD_Colab.git
+                            
+                            docker build -t incrementalload4py BD_Colab/ 
+                            '''
+                        }
+                        
+                    }
+                    post {
+                        success {
+                             // Send notification emails to python development team manager
+                            emailext attachLog: true, body: 'Compile Success.', subject: 'Pipeline Status (Python Dev)', to: 'uttam.itcdreamteam@gmail.com'
+                        }
+                        failure {
+                             // Send notification emails to python development team manager
+                            emailext attachLog: true, body: 'Compile Failed.', subject: 'Pipeline Status (Python Dev)', to: 'uttam.itcdreamteam@gmail.com'
+                        }
+                    }
+                }
+                stage('Build On Scala') {
+                    // Run the Scala code 
+                    steps {
+                        catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+                        // Execute scala scripts
+
+                        sh '''mkdir -p Dev_Scala
+                            cd Dev_Scala
+                            rm -rf BD_Colab
+                            git clone -b ScalaSparkJar https://github.com/Asadkardame/BD_Colab.git
+                            cd BD_Colab/ScalaSparkIngestion
+                            mvn package
+                            spark-submit --master local --jars /var/lib/jenkins/workspace/nagaranipysparkdryrun/lib/postgresql-42.5.3.jar --class scala_spark.IncrementalLoad target/ScalaSparkIngestion-1.0-SNAPSHOT.jar
+
+                            '''
+                        }
+                        
+                    }
+                    post {
+                        success {
+                             // Send notification emails to scala development team manager
+                            emailext attachLog: true, body: 'Compile Success.', subject: 'Pipeline Status (Scala Dev)', to: 'uttam.itcdreamteam@gmail.com'
+                        }
+                        failure {
+                             // Send notification emails to scala development team manager
+                            emailext attachLog: true, body: 'Compile Failed.', subject: 'Pipeline Status (Scala Dev)', to: 'uttam.itcdreamteam@gmail.com'
+                        }
+                    }
+                }
+                stage('Build On Kafka') {
+                    // Run the Scala code 
+                    steps {
+                        // Execute Python scripts with Spark
+                        catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+                        sh '''mkdir -p Dev_Kafka
+                            cd Dev_Kafka
+                            rm -rf BD_Colab
+                            git clone -b pipeline_api_kafka_hbase https://github.com/Asadkardame/BD_Colab.git
+                            cd BD_Colab
+                            mvn package
+                            spark-submit --class com.example.MyMainClass   --packages "org.apache.spark:spark-sql-kafka-0-10_2.11:2.4.7","com.lihaoyi:requests_2.11:0.7.1" \
+                            --jars /opt/cloudera/parcels/CDH-7.1.7-1.cdh7.1.7.p0.15945976/lib/hbase/lib/hbase-client-2.2.3.7.1.7.0-551.jar,/opt/cloudera/parcels/CDH-7.1.7-1.cdh7.1.7.p0.15945976/lib/hbase/lib/hbase-common-2.2.3.7.1.7.0-551.jar,/opt/cloudera/parcels/CDH-7.1.7-1.cdh7.1.7.p0.15945976/lib/hbase/lib/hbase-protocol-2.2.3.7.1.7.0-551.jar,/opt/cloudera/parcels/CDH-7.1.7-1.cdh7.1.7.p0.15945976/jars/hbase-shaded-client-2.2.3.7.1.7.0-551.jar,/opt/cloudera/parcels/CDH-7.1.7-1.cdh7.1.7.p0.15945976/lib/hbase/lib/htrace-core.jar \
+                            target/my-spark-project-0.1.jar || echo 'Build on Kafka failed, Remainder: Activate the API and change the topic numbers'
+                            '''
+                        }
+                    }
+                    post {
+                        success {
+                             // Send notification emails to Kafka development team manager
+                            emailext attachLog: true, body: 'Compile Success.', subject: 'Pipeline Status (Kafka Dev)', to: 'uttam.itcdreamteam@gmail.com'
+                        }
+                        failure {
+                             // Send notification emails to Kafka development team manager
+                            emailext attachLog: true, body: 'Compile Failed.', subject: 'Pipeline Status (Kafka Dev)', to: 'uttam.itcdreamteam@gmail.com'
+                        }
+                    }
+                }
+                
+                
+            }
+        }
+        
+        stage('Test') {
+            parallel {
+                stage('Test On Python') {
+                    // Run the python code 
+                    steps {
+                        // Execute tests for Python scripts
+                        catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+                        // Checkout the source code from the GitHub repository for testing
+                        sh '''mkdir -p QA_Python
+                            cd QA_Python
+                            rm -rf BD_Colab
+                            git clone -b QA_Python https://github.com/Asadkardame/BD_Colab.git
+                            cd BD_Colab
+                            spark-submit --master local[*] --jars /var/lib/jenkins/workspace/nagaranipysparkdryrun/lib/postgresql-42.5.3.jar main.py
+                            python3 Mock_PostGres.py
+                            '''
+
+                        }
+
+
+                        
+                    }
+                    post {
+                        success {
+                             // Send notification emails to python QA team manager
+                            emailext attachLog: true, body: 'Compile Success.', subject: 'Pipeline Status (Python QA)', to: 'uttam.itcdreamteam@gmail.com'
+                        }
+                        failure {
+                             // Send notification emails to python QA team manager
+                            emailext attachLog: true, body: 'Compile Failed.', subject: 'Pipeline Status (Python QA)', to: 'uttam.itcdreamteam@gmail.com'
+                        }
+                    }
+                }
+                stage('Test On Scala') {
+                    // Run the Scala code 
+                    steps {
+                        // Execute Scala scripts with Spark
+                        catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+
+                        sh '''mkdir -p QA_Scala
+                            cd QA_Scala
+                            rm -rf BD_Colab
+                            git clone -b QA_Scala https://github.com/Asadkardame/BD_Colab.git
+                            cd BD_Colab
+                            mvn package
+                            spark-submit --master local --jars /var/lib/jenkins/workspace/nagaranipysparkdryrun/lib/postgresql-42.5.3.jar --class scalatest.FullLoadTest target/FullLoadTest-1.0.jar
+                            '''
+                    
+
+                        }
+                        
+                    }
+                    post {
+                        success {
+                             // Send notification emails to scala QA team manager
+                            emailext attachLog: true, body: 'Compile Success.', subject: 'Pipeline Status (Scala QA)', to: 'uttam.itcdreamteam@gmail.com'
+                        }
+                        failure {
+                             // Send notification emails to scala QA team manager
+                            emailext attachLog: true, body: 'Compile Failed.', subject: 'Pipeline Status (Scala QA)', to: 'uttam.itcdreamteam@gmail.com'
+                        }
+                    }
+                }
+                stage('Test On Kafka') {
+                    // Run the Scala code 
+                    steps {
+                        
+                
+                        // Execute kafa scripts with Spark
+                        catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+                        script {
+                            // Switch to the 'pipeline_api_kafka_hbase' branch for Stage "Build On Scala"
+                            checkout([$class: 'GitSCM', branches: [[name: 'QA_Kafka']], userRemoteConfigs: [[url: 'https://github.com/Asadkardame/BD_Colab.git']]])
+                            // Add your stage-specific steps here
+                        }
+
+                        sh '''mkdir -p QA_Kafka
+                            cd QA_Kafka
+                            rm -rf BD_Colab
+                            git clone -b QA_Kafka https://github.com/Asadkardame/BD_Colab.git
+                            cd BD_Colab
+                            mvn package
+                            spark-submit --class scalatest.KafkaTest   --packages "org.apache.spark:spark-sql-kafka-0-10_2.11:2.4.7","com.lihaoyi:requests_2.11:0.7.1" \
+                           --jars /opt/cloudera/parcels/CDH-7.1.7-1.cdh7.1.7.p0.15945976/lib/hbase/lib/hbase-client-2.2.3.7.1.7.0-551.jar,/opt/cloudera/parcels/CDH-7.1.7-1.cdh7.1.7.p0.15945976/lib/hbase/lib/hbase-common-2.2.3.7.1.7.0-551.jar,/opt/cloudera/parcels/CDH-7.1.7-1.cdh7.1.7.p0.15945976/lib/hbase/lib/hbase-protocol-2.2.3.7.1.7.0-551.jar,/opt/cloudera/parcels/CDH-7.1.7-1.cdh7.1.7.p0.15945976/jars/hbase-shaded-client-2.2.3.7.1.7.0-551.jar,/opt/cloudera/parcels/CDH-7.1.7-1.cdh7.1.7.p0.15945976/lib/hbase/lib/htrace-core.jar \
+                            target/my-spark-project-1.0.jar || echo 'Build on Kafka failed, Remainder: Activate the API and change the topic numbers'
+                            '''
+                        
+
+
+                       
+                        }
+                    }
+                    post {
+                        success {
+                             // Send notification emails to Kafka QA team manager
+                            emailext attachLog: true, body: 'Compile Success.', subject: 'Pipeline Status (Kafka QA)', to: 'uttam.itcdreamteam@gmail.com'
+                        }
+                        failure {
+                             // Send notification emails to Kafka QA team manager
+                            emailext attachLog: true, body: 'Compile Failed.', subject: 'Pipeline Status (Kafka QA)', to: 'uttam.itcdreamteam@gmail.com'
+                        }
+                    }
+                }
+                
+            }
+        }
+
+
+        stage('Transformation and Machine Learning') {
+            steps {
+                // Checkout the source code from the GitHub repository for Machine Learning
+               //git branch: 'TransformML', url: 'https://github.com/Asadkardame/BD_Colab.git'
+
+                catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+                        
+                // Execute machine learning scripts or commands
+               //sh 'spark-submit --master local[*] --jars /var/lib/jenkins/workspace/nagaranipysparkdryrun/lib/postgresql-42.5.3.jar SparkMachineLearningLibrary.py'
+                echo 'Transformation and Machine Learning'
+                       
+                }
+                
+            }
+            post {
+                    success {
+                            // Send notification emails to ML team manager
+                        emailext attachLog: true, body: 'Compile Success.', subject: 'Pipeline Status (ML)', to: 'uttam.itcdreamteam@gmail.com'
+                    }
+                    failure {
+                            // Send notification emails to ML team manager
+                        emailext attachLog: true, body: 'Compile Failed.', subject: 'Pipeline Status (ML)', to: 'uttam.itcdreamteam@gmail.com'
+                    }
+            }
+        } 
+
+        stage('Deploy') {
+            steps {
+                // Checkout the source code from the GitHub repository for deployment
+               git branch: 'main', url: 'https://github.com/Asadkardame/BD_Colab.git'
+                
+                // Execute deployment scripts or commands
+               sh 'spark-submit main.py'
+            }
+        } 
+    }
+    
+    post {
+        
+        success {
+            // Actions to take when the pipeline succeeds
+            echo 'Pipeline succeeded! Congratulations!'
+            emailext attachLog: true, body: 'The Jenkins pipeline has completed.', subject: 'Pipeline Status (Deployment)', to: 'uttam.itcdreamteam@gmail.com'
+        }
+        failure {
+            // Actions to take when the pipeline fails
+            echo 'Pipeline failed! Check the logs for details.'
+            emailext attachLog: true, body: 'The Jenkins pipeline has failed.', subject: 'Pipeline Status (Deployment)', to: 'uttam.itcdreamteam@gmail.com'
+        }
+    }
+}
